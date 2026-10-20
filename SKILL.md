@@ -92,9 +92,14 @@ node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" rea
 ### Step 2: Bundle Workspace Context (if modifying existing code)
 If the user's request involves editing or inspecting existing files, read those files first and combine them with the user's task prompt.
 
-### Step 3: Send Prompt to Argon
+### Step 3: Send Prompt to Argon (with Optional Thinking Level)
+You can customize the thinking depth (`low`, `medium`, `high`):
 ```powershell
-node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" send "Your task and file context here"
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" send "Your task and file context here" --thinking high
+```
+Or set the thinking level independently:
+```powershell
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" thinking high
 ```
 *(If Argon is at limit, this command will immediately exit with code 2. Do not proceed to generate code yourself).*
 

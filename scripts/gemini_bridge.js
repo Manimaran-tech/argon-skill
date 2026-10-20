@@ -2,12 +2,11 @@
 /**
  * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
  * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
- * Includes auto-launch recovery, DOM stabilization, and zero-workspace-temp-file streaming.
+ * Includes auto-launch recovery, thinking level customization (Low/Medium/High), and zero-temp-file streaming.
  * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -24,6 +23,7 @@ function getNamedArg(flag, fallback) {
 }
 
 const CDP_PORT = parseInt(getNamedArg('--port', process.env.CDP_PORT || '9222'), 10);
+const requestedThinking = getNamedArg('--thinking', null);
 const saveFlag = args.includes('--save');
 const customDir = getNamedArg('--dir', null);
 
@@ -175,6 +175,44 @@ async function waitForDomReady(client, maxWaitMs = 12000) {
   }
 }
 
+// Set thinking level (low, medium, high)
+async function setThinkingLevel(client, level = 'high') {
+  const targetText = level.toLowerCase();
+  console.log(`[Bridge] Setting thinking level to: ${level.toUpperCase()}...`);
+
+  const result = await client.eval(`
+    (async () => {
+      let menu = document.querySelector('[role="menu"]');
+      if (!menu) {
+        const modeBtn = document.querySelector('button[aria-label*="mode picker"], [aria-label*="model"], .input-area-switch');
+        if (!modeBtn) return { success: false, error: 'No mode picker button found' };
+        modeBtn.click();
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      const items = Array.from(document.querySelectorAll('gem-menu-item, [role="menuitem"]'));
+      const targetItem = items.find(el => el.innerText.toLowerCase().includes('${targetText}'));
+      if (!targetItem) {
+        document.querySelector('.cdk-overlay-backdrop')?.click() || document.body.click();
+        return { success: false, error: 'Option not found: ${targetText}' };
+      }
+
+      targetItem.click();
+      await new Promise(r => setTimeout(r, 400));
+      document.querySelector('.cdk-overlay-backdrop')?.click() || document.body.click();
+
+      return { success: true, selected: targetItem.innerText.trim() };
+    })()
+  `);
+
+  if (result.success) {
+    console.log(`[Bridge] Thinking level updated to: ${result.selected.split('\\n')[0]}`);
+  } else {
+    console.warn(`[Bridge Warning] ${result.error}`);
+  }
+  return result;
+}
+
 // Strictly verify that Argon is the active model
 async function ensureArgonOnly(client) {
   await waitForDomReady(client);
@@ -225,6 +263,11 @@ async function sendPrompt(promptText) {
   const client = await getClient();
   try {
     await ensureArgonOnly(client);
+
+    // Apply custom thinking level if requested
+    if (requestedThinking) {
+      await setThinkingLevel(client, requestedThinking);
+    }
 
     console.log(`[Bridge] Confirmed Argon model. Typing prompt (${promptText.length} chars)...`);
 
@@ -336,7 +379,6 @@ async function waitForResponse(timeoutSeconds = 240) {
             console.log("\n[Bridge] Argon generation completed!");
             console.log(`[Bridge] Found ${state.codeBlocks.length} code block(s).\n`);
 
-            // Output clean content directly to stdout in-memory
             console.log("=== ARGON_RESPONSE_START ===");
             console.log(state.text);
             console.log("=== ARGON_RESPONSE_END ===");
@@ -347,7 +389,6 @@ async function waitForResponse(timeoutSeconds = 240) {
               console.log("=== ARGON_CODE_BLOCKS_END ===");
             }
 
-            // Only write files if explicitly requested via --save or --dir
             if (saveFlag || customDir) {
               const outDir = customDir ? path.resolve(customDir) : process.cwd();
               const outputPath = path.join(outDir, 'gemini_latest.md');
@@ -411,7 +452,7 @@ async function readCurrent() {
   try {
     if (command === 'send') {
       if (!textArgs) {
-        console.error("Usage: node gemini_bridge.js send <prompt text>");
+        console.error("Usage: node gemini_bridge.js send <prompt text> [--thinking low|medium|high]");
         process.exit(1);
       }
       await sendPrompt(textArgs);
@@ -419,9 +460,17 @@ async function readCurrent() {
       await waitForResponse();
     } else if (command === 'read') {
       await readCurrent();
+    } else if (command === 'thinking') {
+      const level = textArgs || 'high';
+      const client = await getClient();
+      try {
+        await setThinkingLevel(client, level);
+      } finally {
+        client.close();
+      }
     } else if (command === 'send-and-wait') {
       if (!textArgs) {
-        console.error("Usage: node gemini_bridge.js send-and-wait <prompt text>");
+        console.error("Usage: node gemini_bridge.js send-and-wait <prompt text> [--thinking low|medium|high]");
         process.exit(1);
       }
       await sendPrompt(textArgs);
@@ -431,15 +480,17 @@ async function readCurrent() {
 Gemini Browser Bridge - Strict Argon Edition
 --------------------------------------------
 Usage:
-  node gemini_bridge.js read                      Check if Argon is active (blocks Flash-Lite)
-  node gemini_bridge.js send "<prompt>"           Send prompt to Argon only
-  node gemini_bridge.js wait [--save]             Wait for Argon response (streamed in-memory)
-  node gemini_bridge.js send-and-wait "<prompt>"  Send and wait strictly for Argon
+  node gemini_bridge.js read                              Check if Argon is active (blocks Flash-Lite)
+  node gemini_bridge.js thinking <low|medium|high>        Switch thinking reasoning level
+  node gemini_bridge.js send "<prompt>" [--thinking ...]  Send prompt to Argon with thinking level
+  node gemini_bridge.js wait [--save]                     Wait for Argon response (streamed in-memory)
+  node gemini_bridge.js send-and-wait "<prompt>"          Send and wait strictly for Argon
 
 Options:
-  --port <number>   Chrome DevTools remote debugging port (default: 9222)
-  --save            Save output to gemini_latest.md and gemini_output.json in workspace
-  --dir <path>      Custom directory if saving files
+  --thinking <low|medium|high>  Customize reasoning depth
+  --port <number>               Chrome DevTools remote debugging port (default: 9222)
+  --save                        Save output to gemini_latest.md and gemini_output.json in workspace
+  --dir <path>                  Custom directory if saving files
       `);
     }
   } catch (err) {

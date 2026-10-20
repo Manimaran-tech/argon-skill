@@ -167,14 +167,20 @@ The bridge CLI can also be used directly from your terminal:
 # Check connection, active model, and limit status
 node scripts/gemini_bridge.js read
 
-# Send a prompt to Argon (aborts if in Flash-Lite)
-node scripts/gemini_bridge.js send "Analyze this architecture"
+# Customize Argon thinking / reasoning depth (low, medium, high)
+node scripts/gemini_bridge.js thinking high
 
-# Wait for reasoning to finish and export code to a specific workspace
-node scripts/gemini_bridge.js wait --dir "/path/to/project"
+# Send a prompt to Argon with custom thinking level
+node scripts/gemini_bridge.js send "Analyze this architecture" --thinking high
 
-# Full roundtrip: Send prompt and wait for full response
-node scripts/gemini_bridge.js send-and-wait "Generate a FastAPI server" --dir "."
+# Wait for reasoning to finish (streamed in-memory, zero workspace clutter)
+node scripts/gemini_bridge.js wait
+
+# Optional: Save raw markdown and json output to disk if desired
+node scripts/gemini_bridge.js wait --save --dir "/path/to/project"
+
+# Full roundtrip: Send prompt and wait for full response in-memory
+node scripts/gemini_bridge.js send-and-wait "Generate a FastAPI server" --thinking high
 ```
 
 ---
