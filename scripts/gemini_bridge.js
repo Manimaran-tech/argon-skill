@@ -2,11 +2,13 @@
 /**
  * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
  * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
+ * Includes auto-launch recovery if Chrome is not running after a reboot.
  * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 // CLI Argument Parsing
 const args = process.argv.slice(2);
@@ -30,18 +32,71 @@ const textArgs = args.slice(1).filter((a, i, arr) => {
   return true;
 }).join(' ');
 
+// Auto-launch Chrome if port 9222 is offline
+async function ensureChromeRunning() {
+  try {
+    const res = await fetch(`http://localhost:${CDP_PORT}/json/version`);
+    if (res.ok) return;
+  } catch (_) {
+    // Port is offline, attempt auto-launch
+    console.log(`[Bridge] Chrome is not running on port ${CDP_PORT}. Auto-launching debug browser...`);
+    const isWindows = process.platform === 'win32';
+    const scriptName = isWindows ? 'launch_chrome_cdp.ps1' : 'launch_chrome_cdp.sh';
+    const scriptPath = path.join(__dirname, scriptName);
+
+    if (fs.existsSync(scriptPath)) {
+      try {
+        if (isWindows) {
+          execSync(`powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Port ${CDP_PORT}`, { stdio: 'ignore' });
+        } else {
+          execSync(`bash "${scriptPath}" ${CDP_PORT}`, { stdio: 'ignore' });
+        }
+      } catch (err) {
+        console.warn(`[Bridge Warning] Auto-launch script returned: ${err.message}`);
+      }
+    }
+
+    // Wait up to 10 seconds for port to open
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        const res = await fetch(`http://localhost:${CDP_PORT}/json/version`);
+        if (res.ok) {
+          console.log(`[Bridge] Chrome successfully connected on port ${CDP_PORT}.`);
+          return;
+        }
+      } catch (_) {}
+    }
+  }
+}
+
 async function getGeminiTarget() {
+  await ensureChromeRunning();
+
+  let targets = [];
   try {
     const res = await fetch(`http://localhost:${CDP_PORT}/json/list`);
-    const targets = await res.json();
-    return targets.find(t => t.url && t.url.includes('gemini.google.com'));
+    targets = await res.json();
   } catch (err) {
     throw new Error(
       `Could not connect to Chrome DevTools on port ${CDP_PORT}.\n` +
-      `Make sure Google Chrome is running with: --remote-debugging-port=${CDP_PORT}\n` +
-      `You can launch it via scripts/launch_chrome_cdp.ps1 (Windows) or scripts/launch_chrome_cdp.sh (macOS/Linux).`
+      `Make sure Google Chrome is running with: --remote-debugging-port=${CDP_PORT}`
     );
   }
+
+  let gemini = targets.find(t => t.url && t.url.includes('gemini.google.com'));
+
+  // If Gemini tab is not open, open it automatically
+  if (!gemini) {
+    console.log("[Bridge] Gemini tab not open. Navigating to https://gemini.google.com/app...");
+    try {
+      const newTabRes = await fetch(`http://localhost:${CDP_PORT}/json/new?https://gemini.google.com/app`, { method: 'PUT' });
+      gemini = await newTabRes.json();
+      await new Promise(r => setTimeout(r, 4000));
+    } catch (_) {}
+  }
+
+  return gemini;
 }
 
 class GeminiCDPClient {
