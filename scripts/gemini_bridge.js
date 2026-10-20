@@ -1,0 +1,354 @@
+#!/usr/bin/env node
+/**
+ * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
+ * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
+ * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// CLI Argument Parsing
+const args = process.argv.slice(2);
+const command = args[0];
+
+function getNamedArg(flag, fallback) {
+  const idx = args.indexOf(flag);
+  if (idx !== -1 && args[idx + 1]) {
+    return args[idx + 1];
+  }
+  return fallback;
+}
+
+const CDP_PORT = parseInt(getNamedArg('--port', process.env.CDP_PORT || '9222'), 10);
+const targetDir = path.resolve(getNamedArg('--dir', process.cwd()));
+
+// Extract positional prompt text excluding flags
+const textArgs = args.slice(1).filter((a, i, arr) => {
+  if (a.startsWith('--')) return false;
+  if (i > 0 && arr[i - 1].startsWith('--')) return false;
+  return true;
+}).join(' ');
+
+async function getGeminiTarget() {
+  try {
+    const res = await fetch(`http://localhost:${CDP_PORT}/json/list`);
+    const targets = await res.json();
+    return targets.find(t => t.url && t.url.includes('gemini.google.com'));
+  } catch (err) {
+    throw new Error(
+      `Could not connect to Chrome DevTools on port ${CDP_PORT}.\n` +
+      `Make sure Google Chrome is running with: --remote-debugging-port=${CDP_PORT}\n` +
+      `You can launch it via scripts/launch_chrome_cdp.ps1 (Windows) or scripts/launch_chrome_cdp.sh (macOS/Linux).`
+    );
+  }
+}
+
+class GeminiCDPClient {
+  constructor(wsUrl) {
+    this.wsUrl = wsUrl;
+    this.ws = null;
+    this.msgId = 1;
+    this.callbacks = new Map();
+  }
+
+  async connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.wsUrl);
+      this.ws.onopen = () => resolve();
+      this.ws.onerror = (err) => reject(err);
+      this.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.id && this.callbacks.has(data.id)) {
+          const cb = this.callbacks.get(data.id);
+          this.callbacks.delete(data.id);
+          cb(data);
+        }
+      };
+    });
+  }
+
+  send(method, params = {}) {
+    return new Promise((resolve) => {
+      const id = this.msgId++;
+      this.callbacks.set(id, resolve);
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async eval(expression) {
+    const res = await this.send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true
+    });
+    if (res.result && res.result.exceptionDetails) {
+      throw new Error(`CDP Eval Exception: ${JSON.stringify(res.result.exceptionDetails)}`);
+    }
+    return res.result?.result?.value;
+  }
+
+  close() {
+    if (this.ws) {
+      try { this.ws.close(); } catch (_) {}
+    }
+  }
+}
+
+async function getClient() {
+  const target = await getGeminiTarget();
+  if (!target) {
+    throw new Error("No open Gemini tab found in Chrome. Please make sure https://gemini.google.com/app is open.");
+  }
+  const client = new GeminiCDPClient(target.webSocketDebuggerUrl);
+  await client.connect();
+  return client;
+}
+
+// Strictly verify that Argon is the active model
+async function ensureArgonOnly(client) {
+  const status = await client.eval(`
+    (() => {
+      const modeBtn = document.querySelector('button[aria-label*="mode picker"], [aria-label*="model"], .input-area-switch');
+      const modeText = modeBtn ? modeBtn.innerText.trim() : '';
+      const modeAria = modeBtn ? (modeBtn.getAttribute('aria-label') || '') : '';
+      
+      const bodyText = document.body.innerText;
+      const isLimitBanner = bodyText.includes('Limit reached') || 
+                            bodyText.includes('Continuing with Flash-Lite') || 
+                            bodyText.includes('reached your limit');
+
+      let resetInfo = '';
+      if (isLimitBanner) {
+        const match = bodyText.match(/resets on ([^\\.\\n]+)/i) || bodyText.match(/resets in ([^\\.\\n]+)/i);
+        if (match) resetInfo = match[0];
+      }
+
+      const isArgon = modeText.toLowerCase().includes('argon') || modeAria.toLowerCase().includes('argon');
+      const isFlash = modeText.toLowerCase().includes('flash') || modeAria.toLowerCase().includes('flash');
+
+      return {
+        modeText,
+        isArgon,
+        isFlash,
+        isLimitReached: isLimitBanner || isFlash || !isArgon,
+        resetInfo
+      };
+    })()
+  `);
+
+  if (!status.isArgon || status.isLimitReached) {
+    const resetMsg = status.resetInfo ? ` (${status.resetInfo})` : '';
+    console.error(`\n[BLOCKED] Argon limit reached${resetMsg}. Flash-Lite is completely blocked.`);
+    client.close();
+    process.exit(2);
+  }
+
+  return status;
+}
+
+// 1. Send Prompt to Argon
+async function sendPrompt(promptText) {
+  const client = await getClient();
+  try {
+    await ensureArgonOnly(client);
+
+    console.log(`[Bridge] Confirmed Argon model. Typing prompt (${promptText.length} chars)...`);
+
+    // Trusted Types safe: clear content via Range selection + execCommand
+    await client.eval(`
+      (() => {
+        const ql = document.querySelector('.ql-editor');
+        if (!ql) return;
+        ql.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(ql);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.execCommand('delete', false);
+      })()
+    `);
+
+    // Native text input via CDP
+    await client.send("Input.insertText", { text: promptText });
+
+    // Dispatch events & click send
+    const result = await client.eval(`
+      (() => {
+        const ql = document.querySelector('.ql-editor');
+        if (ql) {
+          ql.dispatchEvent(new Event('input', { bubbles: true }));
+          ql.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        const sendBtn = document.querySelector('button[aria-label="Send message"], button[aria-label*="Send"], button.send-button');
+        if (!sendBtn) {
+          return { success: false, error: 'Send button not active after typing' };
+        }
+        sendBtn.click();
+        return { success: true };
+      })()
+    `);
+
+    if (!result.success) {
+      throw new Error(`Failed to send prompt: ${result.error}`);
+    }
+    console.log("[Bridge] Prompt submitted to Argon!");
+  } finally {
+    client.close();
+  }
+}
+
+// 2. Wait for Argon Generation
+async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
+  const client = await getClient();
+  try {
+    console.log("[Bridge] Waiting for Argon to respond...");
+    const startTime = Date.now();
+    let hasStartedGenerating = false;
+    let lastText = '';
+    let stableCount = 0;
+
+    while (Date.now() - startTime < timeoutSeconds * 1000) {
+      // Hard check: if limit hit mid-generation, abort immediately
+      await ensureArgonOnly(client);
+
+      const state = await client.eval(`
+        (() => {
+          const stopBtn = document.querySelector('button[aria-label*="Stop"], button[aria-label*="stop"]');
+          const isGenerating = !!stopBtn;
+          
+          const responseElements = document.querySelectorAll('model-response, message-content, [data-test-id="model-response"], .model-response-text');
+          let latestEl = null;
+          if (responseElements.length > 0) {
+            latestEl = responseElements[responseElements.length - 1];
+          } else {
+            const turns = document.querySelectorAll('.chat-turn, conversation-turn');
+            if (turns.length > 0) latestEl = turns[turns.length - 1];
+          }
+
+          const codeBlocks = [];
+          if (latestEl) {
+            const pres = latestEl.querySelectorAll('pre');
+            pres.forEach(pre => {
+              const code = pre.querySelector('code') || pre;
+              const langHeader = pre.closest('.code-block')?.querySelector('.code-block-decoration')?.innerText || '';
+              codeBlocks.push({
+                header: langHeader.trim(),
+                code: code.innerText
+              });
+            });
+          }
+
+          const thinkingEl = latestEl?.querySelector('.thinking-content, [aria-label*="thought"], [data-test-id*="thought"]');
+
+          return {
+            isGenerating,
+            hasContent: !!latestEl && latestEl.innerText.trim().length > 0,
+            text: latestEl ? latestEl.innerText : '',
+            codeBlocks: codeBlocks,
+            thinkingText: thinkingEl ? thinkingEl.innerText : null
+          };
+        })()
+      `);
+
+      if (state && state.isGenerating) {
+        hasStartedGenerating = true;
+        stableCount = 0;
+        process.stdout.write(".");
+      } else if (hasStartedGenerating || (state && state.hasContent)) {
+        if (state.text === lastText && state.text.length > 0) {
+          stableCount++;
+          if (stableCount >= 3) {
+            console.log("\n[Bridge] Argon generation completed!");
+            
+            const outputPath = path.join(outDir, 'gemini_latest.md');
+            fs.writeFileSync(outputPath, state.text, 'utf-8');
+            
+            const jsonPath = path.join(outDir, 'gemini_output.json');
+            fs.writeFileSync(jsonPath, JSON.stringify(state, null, 2), 'utf-8');
+
+            console.log(`[Bridge] Saved Argon response to: ${outputPath}`);
+            console.log(`[Bridge] Found ${state.codeBlocks.length} code block(s).`);
+            return state;
+          }
+        } else {
+          lastText = state.text;
+          stableCount = 0;
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    throw new Error("Timeout waiting for Argon response.");
+  } finally {
+    client.close();
+  }
+}
+
+// 3. Read Current State Without Sending
+async function readCurrent() {
+  const client = await getClient();
+  try {
+    await ensureArgonOnly(client);
+
+    const data = await client.eval(`
+      (() => {
+        const responseElements = document.querySelectorAll('model-response, message-content, [data-test-id="model-response"], .model-response-text');
+        const latest = responseElements[responseElements.length - 1];
+        return {
+          title: document.title,
+          totalResponses: responseElements.length,
+          latestSnippet: latest ? latest.innerText.slice(0, 300) : '(No response yet)'
+        };
+      })()
+    `);
+    
+    console.log("[Bridge] Argon Status: Active and Ready.");
+    return data;
+  } finally {
+    client.close();
+  }
+}
+
+(async () => {
+  try {
+    if (command === 'send') {
+      if (!textArgs) {
+        console.error("Usage: node gemini_bridge.js send <prompt text>");
+        process.exit(1);
+      }
+      await sendPrompt(textArgs);
+    } else if (command === 'wait') {
+      await waitForResponse(targetDir);
+    } else if (command === 'read') {
+      await readCurrent();
+    } else if (command === 'send-and-wait') {
+      if (!textArgs) {
+        console.error("Usage: node gemini_bridge.js send-and-wait <prompt text>");
+        process.exit(1);
+      }
+      await sendPrompt(textArgs);
+      await waitForResponse(targetDir);
+    } else {
+      console.log(`
+Gemini Browser Bridge - Strict Argon Edition
+--------------------------------------------
+Usage:
+  node gemini_bridge.js read                      Check if Argon is active (blocks Flash-Lite)
+  node gemini_bridge.js send "<prompt>"           Send prompt to Argon only
+  node gemini_bridge.js wait [--dir <path>]       Wait for Argon response & extract code
+  node gemini_bridge.js send-and-wait "<prompt>"  Send and wait strictly for Argon
+
+Options:
+  --port <number>   Chrome DevTools remote debugging port (default: 9222)
+  --dir <path>      Output directory for gemini_latest.md and gemini_output.json
+      `);
+    }
+  } catch (err) {
+    console.error(`[Bridge Error]`, err.message);
+    process.exit(1);
+  }
+})();

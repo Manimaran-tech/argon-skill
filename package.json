@@ -1,0 +1,34 @@
+{
+  "name": "argon-skill",
+  "version": "1.0.0",
+  "description": "Autonomous two-way bridge connecting Antigravity with Gemini Argon (and thinking models) via Chrome DevTools Protocol (CDP)",
+  "main": "scripts/gemini_bridge.js",
+  "scripts": {
+    "test": "node scripts/gemini_bridge.js read",
+    "bridge": "node scripts/gemini_bridge.js"
+  },
+  "keywords": [
+    "antigravity",
+    "gemini",
+    "argon",
+    "thinking-models",
+    "cdp",
+    "chrome-devtools-protocol",
+    "ai-agent",
+    "pair-programming",
+    "agentic-coding"
+  ],
+  "author": "Manimaran K (https://github.com/Manimaran-tech)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Manimaran-tech/argon-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Manimaran-tech/argon-skill/issues"
+  },
+  "homepage": "https://github.com/Manimaran-tech/argon-skill#readme",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
