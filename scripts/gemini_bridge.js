@@ -2,7 +2,7 @@
 /**
  * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
  * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
- * Includes auto-launch recovery and DOM stabilization guards.
+ * Includes auto-launch recovery, DOM stabilization, and robust text extraction.
  * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
  */
 
@@ -282,7 +282,6 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
     let stableCount = 0;
 
     while (Date.now() - startTime < timeoutSeconds * 1000) {
-      // Hard check: if limit hit mid-generation, abort immediately
       await ensureArgonOnly(client);
 
       const state = await client.eval(`
@@ -290,18 +289,19 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
           const stopBtn = document.querySelector('button[aria-label*="Stop"], button[aria-label*="stop"]');
           const isGenerating = !!stopBtn;
           
-          const responseElements = document.querySelectorAll('model-response, message-content, [data-test-id="model-response"], .model-response-text');
-          let latestEl = null;
-          if (responseElements.length > 0) {
-            latestEl = responseElements[responseElements.length - 1];
-          } else {
-            const turns = document.querySelectorAll('.chat-turn, conversation-turn');
-            if (turns.length > 0) latestEl = turns[turns.length - 1];
-          }
+          // Query markdown content elements directly
+          const markdownEls = document.querySelectorAll('.markdown, .md-content, [inline-copy-host], .response-content');
+          const latestMd = markdownEls.length > 0 ? markdownEls[markdownEls.length - 1] : null;
 
+          let cleanedText = '';
           const codeBlocks = [];
-          if (latestEl) {
-            const pres = latestEl.querySelectorAll('pre');
+
+          if (latestMd) {
+            const clone = latestMd.cloneNode(true);
+            clone.querySelectorAll('.cdk-visually-hidden, .model-response-label-announcer, thinking-overlay').forEach(el => el.remove());
+            cleanedText = clone.innerText.trim();
+
+            const pres = latestMd.querySelectorAll('pre');
             pres.forEach(pre => {
               const code = pre.querySelector('code') || pre;
               const langHeader = pre.closest('.code-block')?.querySelector('.code-block-decoration')?.innerText || '';
@@ -312,12 +312,12 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
             });
           }
 
-          const thinkingEl = latestEl?.querySelector('.thinking-content, [aria-label*="thought"], [data-test-id*="thought"]');
+          const thinkingEl = document.querySelector('thinking-overlay, .thinking-content, [aria-label*="thought"]');
 
           return {
             isGenerating,
-            hasContent: !!latestEl && latestEl.innerText.trim().length > 0,
-            text: latestEl ? latestEl.innerText : '',
+            hasContent: cleanedText.length > 0,
+            text: cleanedText,
             codeBlocks: codeBlocks,
             thinkingText: thinkingEl ? thinkingEl.innerText : null
           };
@@ -331,7 +331,7 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
       } else if (hasStartedGenerating || (state && state.hasContent)) {
         if (state.text === lastText && state.text.length > 0) {
           stableCount++;
-          if (stableCount >= 3) {
+          if (stableCount >= 2) {
             console.log("\n[Bridge] Argon generation completed!");
             
             const outputPath = path.join(outDir, 'gemini_latest.md');
@@ -367,17 +367,25 @@ async function readCurrent() {
 
     const data = await client.eval(`
       (() => {
-        const responseElements = document.querySelectorAll('model-response, message-content, [data-test-id="model-response"], .model-response-text');
-        const latest = responseElements[responseElements.length - 1];
+        const markdownEls = document.querySelectorAll('.markdown, .md-content, [inline-copy-host], .response-content');
+        const latestMd = markdownEls.length > 0 ? markdownEls[markdownEls.length - 1] : null;
+        let cleanedText = '';
+        if (latestMd) {
+          const clone = latestMd.cloneNode(true);
+          clone.querySelectorAll('.cdk-visually-hidden, .model-response-label-announcer, thinking-overlay').forEach(el => el.remove());
+          cleanedText = clone.innerText.trim();
+        }
+
         return {
           title: document.title,
-          totalResponses: responseElements.length,
-          latestSnippet: latest ? latest.innerText.slice(0, 300) : '(No response yet)'
+          url: window.location.href,
+          latestText: cleanedText || '(No response yet)'
         };
       })()
     `);
     
     console.log("[Bridge] Argon Status: Active and Ready.");
+    console.log("[Bridge] Latest Message:", data.latestText);
     return data;
   } finally {
     client.close();
