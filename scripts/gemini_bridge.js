@@ -2,7 +2,7 @@
 /**
  * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
  * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
- * Includes auto-launch recovery if Chrome is not running after a reboot.
+ * Includes auto-launch recovery and DOM stabilization guards.
  * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
  */
 
@@ -38,7 +38,6 @@ async function ensureChromeRunning() {
     const res = await fetch(`http://localhost:${CDP_PORT}/json/version`);
     if (res.ok) return;
   } catch (_) {
-    // Port is offline, attempt auto-launch
     console.log(`[Bridge] Chrome is not running on port ${CDP_PORT}. Auto-launching debug browser...`);
     const isWindows = process.platform === 'win32';
     const scriptName = isWindows ? 'launch_chrome_cdp.ps1' : 'launch_chrome_cdp.sh';
@@ -56,7 +55,6 @@ async function ensureChromeRunning() {
       }
     }
 
-    // Wait up to 10 seconds for port to open
     for (let i = 0; i < 10; i++) {
       await new Promise(r => setTimeout(r, 1000));
       try {
@@ -86,7 +84,6 @@ async function getGeminiTarget() {
 
   let gemini = targets.find(t => t.url && t.url.includes('gemini.google.com'));
 
-  // If Gemini tab is not open, open it automatically
   if (!gemini) {
     console.log("[Bridge] Gemini tab not open. Navigating to https://gemini.google.com/app...");
     try {
@@ -160,8 +157,26 @@ async function getClient() {
   return client;
 }
 
+// Wait up to maxWaitMs for the DOM elements to finish rendering
+async function waitForDomReady(client, maxWaitMs = 12000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const ready = await client.eval(`
+      (() => {
+        const modeBtn = document.querySelector('button[aria-label*="mode picker"], [aria-label*="model"], .input-area-switch');
+        const ql = document.querySelector('.ql-editor');
+        return !!modeBtn || !!ql;
+      })()
+    `);
+    if (ready) return;
+    await new Promise(r => setTimeout(r, 600));
+  }
+}
+
 // Strictly verify that Argon is the active model
 async function ensureArgonOnly(client) {
+  await waitForDomReady(client);
+
   const status = await client.eval(`
     (() => {
       const modeBtn = document.querySelector('button[aria-label*="mode picker"], [aria-label*="model"], .input-area-switch');
@@ -183,10 +198,11 @@ async function ensureArgonOnly(client) {
       const isFlash = modeText.toLowerCase().includes('flash') || modeAria.toLowerCase().includes('flash');
 
       return {
+        hasModeBtn: !!modeBtn,
         modeText,
         isArgon,
         isFlash,
-        isLimitReached: isLimitBanner || isFlash || !isArgon,
+        isLimitReached: isLimitBanner || isFlash,
         resetInfo
       };
     })()
