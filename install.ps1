@@ -17,5 +17,5 @@ New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 Copy-Item -Path "$PSScriptRoot\SKILL.md" -Destination $targetDir -Force
 Copy-Item -Path "$PSScriptRoot\scripts" -Destination $targetDir -Recurse -Force
 
-Write-Host "`n Argon Skill installed successfully!" -ForegroundColor Green
+Write-Host "`n[SUCCESS] Argon Skill installed successfully!" -ForegroundColor Green
 Write-Host "You can now use 'argon' in any Antigravity conversation or workspace." -ForegroundColor White

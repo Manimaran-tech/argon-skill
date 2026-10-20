@@ -23,5 +23,5 @@ cp -r "$SCRIPT_DIR/scripts" "$TARGET_DIR/"
 chmod +x "$TARGET_DIR/scripts/gemini_bridge.js" || true
 chmod +x "$TARGET_DIR/scripts/launch_chrome_cdp.sh" || true
 
-echo -e "\n\033[0;32m Argon Skill installed successfully!\033[0m"
+echo -e "\n\033[0;32m[SUCCESS] Argon Skill installed successfully!\033[0m"
 echo -e "You can now use 'argon' in any Antigravity conversation or workspace."

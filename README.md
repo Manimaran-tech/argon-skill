@@ -1,10 +1,10 @@
-# ⚡ ARGON Skill: Autonomous Gemini Browser Bridge for Google Antigravity
+# ARGON Skill: Autonomous Gemini Browser Bridge for Google Antigravity
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Node: >=20.0.0](https://img.shields.io/badge/node-%3E%3D20.0.0-green.svg)](https://nodejs.org/)
-[![Protocol: Chrome DevTools Protocol](https://img.shields.io/badge/Protocol-CDP_v1.3-orange.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Dependencies: Zero](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
-[![Antigravity: Skill v1.0](https://img.shields.io/badge/Antigravity-Skill_v1.0-purple.svg)](https://antigravity.google/)
+[![Node: >=20.0.0](https://img.shields.io/badge/node-%3E%3D20.0.0-blue.svg)](https://nodejs.org/)
+[![Protocol: Chrome DevTools Protocol](https://img.shields.io/badge/Protocol-CDP_v1.3-blue.svg)](https://chromedevtools.github.io/devtools-protocol/)
+[![Dependencies: Zero](https://img.shields.io/badge/dependencies-0-blue.svg)](package.json)
+[![Antigravity: Skill v1.0](https://img.shields.io/badge/Antigravity-Skill_v1.0-blue.svg)](https://antigravity.google/)
 
 **ARGON Skill** is a production-grade, two-way autonomous bridge connecting **Google Antigravity** with **Gemini Argon (and thinking models)** running in Google Chrome via the **Chrome DevTools Protocol (CDP)**.
 
@@ -12,7 +12,7 @@ It pairs Gemini's deep reasoning and thinking capabilities inside your authentic
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 The following diagram illustrates how Antigravity orchestrates the development loop between your local workspace and your Google Chrome Gemini web session:
 
@@ -39,7 +39,7 @@ flowchart TD
 
 ---
 
-## 🔄 Two-Way Autonomous Workflow
+## Two-Way Autonomous Workflow
 
 ```mermaid
 sequenceDiagram
@@ -68,18 +68,18 @@ sequenceDiagram
 
 ---
 
-## ⚖️ Architectural Advantages: Why CDP?
+## Architectural Advantages: Why CDP?
 
 | Approach | Security & Reliability | Zero-Ban Safety | Local File Access | Maintenance Cost |
 | :--- | :--- | :--- | :--- | :--- |
-| **ARGON CDP Bridge (This Skill)** | 🟢 **100% Native & Resilient** | 🟢 **Zero Risk** (Authentic Browser TLS & Session) | 🟢 **Full** (Piped through Antigravity) | 🟢 **Zero Maintenance** (Update-proof) |
-| **Reverse Engineering Client** | 🔴 Breaks on weekly updates | 🔴 High Risk (Integrity checks fail) | 🔴 Requires local model weights | 🔴 Extremely High |
-| **Unofficial Web Scraping / APIs** | 🔴 Brittle Protobuf / Bot checks | 🔴 High Risk (Google Account suspension) | 🔴 None | 🔴 Breaks continuously |
-| **Official API Keys** | 🟢 Native & Clean | 🟢 Official | 🟢 Full (via SDK) | 🟡 Separate billing / quotas |
+| **ARGON CDP Bridge (This Skill)** | **Optimal (Native & Resilient)** | **Zero Risk** (Authentic Browser TLS & Session) | **Full** (Piped through Antigravity) | **Minimal** (Update-proof) |
+| **Reverse Engineering Client** | Fragile (Breaks on client updates) | High Risk (Integrity checks fail) | Requires local model weights | Extremely High |
+| **Unofficial Web Scraping / APIs** | Unstable (Protobuf / Anti-bot checks) | High Risk (Account suspension) | None | Constant Breakage |
+| **Official API Keys** | Native & Clean | Zero Risk (Official) | Full (via SDK) | Separate billing / quotas |
 
 ---
 
-## 🛡️ Strict Argon Mode: Flash-Lite Safeguard
+## Strict Argon Mode: Flash-Lite Safeguard
 
 On consumer Google accounts, reaching the quota limit for reasoning models typically triggers an automatic fallback to **Flash-Lite**.
 
@@ -94,10 +94,10 @@ When engineering complex codebases, responses from a non-thinking lightweight mo
 
 ---
 
-## 🚀 Quickstart & Installation
+## Quickstart & Installation
 
 ### 1. Prerequisites
-* **Node.js** $\ge$ 20.0.0 (built-in native `WebSocket` and `fetch` support; no `npm install` needed)
+* **Node.js** >= 20.0.0 (built-in native `WebSocket` and `fetch` support; no `npm install` needed)
 * **Google Chrome** (or Chromium)
 * **Google Antigravity**
 
@@ -142,7 +142,7 @@ Once Chrome launches:
 
 ---
 
-## 💻 Using in Antigravity
+## Using in Antigravity
 
 Once installed, simply open any chat in Antigravity and prompt your agent:
 
@@ -157,7 +157,7 @@ Antigravity will automatically:
 
 ---
 
-## 🛠️ CLI Reference
+## CLI Reference
 
 The bridge CLI can also be used directly from your terminal:
 
@@ -177,7 +177,7 @@ node scripts/gemini_bridge.js send-and-wait "Generate a FastAPI server" --dir ".
 
 ---
 
-## 📄 License & Attribution
+## License & Attribution
 
 Licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for terms.
 
