@@ -5,9 +5,22 @@ description: Autonomous two-way bridge connecting Antigravity with Gemini Argon 
 
 # Argon Bridge (Gemini Chrome DevTools Protocol)
 
+> [!CAUTION]
+> ### MANDATORY AGENT DIRECTIVE — ZERO INTERNAL FALLBACK
+> When the user invokes Argon or this skill:
+> 1. **YOU ARE STRICTLY FORBIDDEN FROM ANSWERING THE CODING TASK USING YOUR OWN INTERNAL MODEL.**
+> 2. You **MUST** route the prompt to Argon using `gemini_bridge.js`.
+> 3. If the debugging port is closed, the bridge script **automatically launches Chrome on port 9222**. If needed, run the launcher script first. **DO NOT skip the bridge.**
+> 4. If Argon is at its quota limit, report the reset time and **STOP**. Do NOT generate a fallback response with Flash.
+
+---
+
+## Architecture
+
 This skill connects Antigravity directly to your Gemini session running the **Argon** model in Google Chrome (`https://gemini.google.com/app`) using the **Chrome DevTools Protocol (CDP)** on port `9222`.
 
-It allows **Argon** in Chrome to serve as the **high-level reasoning / thinking architect**, while Antigravity acts as the **local execution engine** (reading project files, creating files, running builds, debugging, and reporting back results).
+* **Argon (in Chrome):** The High-Reasoning Architect (thinks, reasons, generates code).
+* **Antigravity (Local Agent):** The Local Executor (reads files, pipes them to Argon, runs builds, executes tests, feeds logs back).
 
 ---
 
@@ -40,74 +53,62 @@ Argon inside Chrome is completely sandboxed by the browser and cannot access you
 
 ## Strict Argon Mode (No Flash-Lite Fallback)
 
-By default:
 * **The bridge strictly requires the Argon model.**
 * If your Gemini account reaches the Argon rate limit and attempts to fall back to **Flash-Lite**, the bridge immediately **aborts** with:
   ```text
   [BLOCKED] Argon limit reached (resets on <time>). Flash-Lite is completely blocked.
   ```
-* It will **never** submit prompts to or accept code from Flash-Lite.
+* When this happens, **STOP and inform the user**. Under no circumstances should you generate the code yourself.
 
 ---
 
-## Skill Scripts Location
+## Executable Script Paths
 
-The skill scripts are located within the skill directory:
-* **Argon Bridge CLI:** `<skill-dir>/scripts/gemini_bridge.js`
-* **Windows Launcher:** `<skill-dir>/scripts/launch_chrome_cdp.ps1`
-* **macOS / Linux Launcher:** `<skill-dir>/scripts/launch_chrome_cdp.sh`
+The agent should execute the bridge script using the user's global config directory:
 
----
-
-## When to Use This Skill
-
-Activate this skill whenever:
-- The user mentions **Argon**, or wants to use their Chrome Gemini Argon session to generate code or design a project.
-- The user asks to communicate with their browser chat tab or bridge chat responses with local workspace execution.
-- The user asks for an automated loop between Argon's reasoning and local file/command execution.
-
----
-
-## Standard Workflow
-
-### 1. Ensure Chrome is Running with Remote Debugging
-Verify port 9222 is active or launch Chrome:
 * **Windows:**
   ```powershell
-  pwsh -File "<skill-dir>/scripts/launch_chrome_cdp.ps1"
+  node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" <command>
   ```
 * **macOS / Linux:**
   ```bash
-  bash "<skill-dir>/scripts/launch_chrome_cdp.sh"
+  node "$HOME/.gemini/config/skills/argon/scripts/gemini_bridge.js" <command>
   ```
 
-### 2. Verify Connection & Model Status
-```bash
-node "<skill-dir>/scripts/gemini_bridge.js" read
-```
-If the output shows `limitReached: true`, notify the user that Argon is at its limit and report the reset time.
+---
 
-### 3. Send Prompt to Argon (with local file context)
-Antigravity reads local files first, formats them, and sends them:
-```bash
-node "<skill-dir>/scripts/gemini_bridge.js" send "Your task or instruction here"
-```
-*(If Argon's limit is reached, this aborts immediately and refuses to use Flash-Lite).*
+## Standard Execution Protocol for the Agent
 
-### 4. Wait for Reasoning & Extract Code
-```bash
-node "<skill-dir>/scripts/gemini_bridge.js" wait --dir "<active-workspace-path>"
-```
-This automatically:
-- Monitors the chat until Argon finishes generating and the "Stop response" button disappears.
-- Saves the full Markdown response to `<active-workspace>/gemini_latest.md`.
-- Saves structured metadata and all parsed code blocks to `<active-workspace>/gemini_output.json`.
+When the user asks you to do something with Argon:
 
-### 5. Execute Code & Feed Back Diagnostics
-1. Antigravity inspects `gemini_output.json` and writes the code blocks to their target file paths.
-2. Antigravity runs the code, tests, or compiler commands in the workspace terminal.
-3. Antigravity sends terminal logs/errors back to Argon to continue the development loop:
-   ```bash
-   node "<skill-dir>/scripts/gemini_bridge.js" send "Execution Output: ... (exit code 0 / error log)"
+### Step 1: Ensure Chrome is Running & Verify Argon Status
+Run the status check:
+```powershell
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" read
+```
+*(The bridge script will **automatically launch Chrome on port 9222** if it is not currently open).*
+
+### Step 2: Bundle Workspace Context (if modifying existing code)
+If the user's request involves editing or inspecting existing files, read those files first and combine them with the user's task prompt.
+
+### Step 3: Send Prompt to Argon
+```powershell
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" send "Your task and file context here"
+```
+*(If Argon is at limit, this command will immediately exit with code 2. Do not proceed to generate code yourself).*
+
+### Step 4: Wait for Argon & Extract Code
+```powershell
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" wait --dir "<current-working-directory>"
+```
+This saves:
+- Full response text to `<workspace>/gemini_latest.md`
+- Structured code blocks to `<workspace>/gemini_output.json`
+
+### Step 5: Apply Code & Report Feedback
+1. Read `gemini_output.json` and write each code block to its respective file in the workspace.
+2. Run any build, compile, or test commands requested.
+3. Pipe the terminal output back to Argon if follow-up is needed:
+   ```powershell
+   node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" send "Build output: (paste terminal stdout/stderr here)"
    ```
-4. Repeat steps 4–5 until the feature or project is fully built!
