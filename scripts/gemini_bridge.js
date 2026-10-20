@@ -2,11 +2,12 @@
 /**
  * Gemini Browser Bridge (Chrome DevTools Protocol) - Argon-Only Edition
  * Autonomous bridge connecting agentic coding assistants with Gemini Argon in Google Chrome.
- * Includes auto-launch recovery, DOM stabilization, and robust text extraction.
+ * Includes auto-launch recovery, DOM stabilization, and zero-workspace-temp-file streaming.
  * No third-party npm dependencies required (uses built-in Node 20+ WebSocket & fetch).
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -23,7 +24,8 @@ function getNamedArg(flag, fallback) {
 }
 
 const CDP_PORT = parseInt(getNamedArg('--port', process.env.CDP_PORT || '9222'), 10);
-const targetDir = path.resolve(getNamedArg('--dir', process.cwd()));
+const saveFlag = args.includes('--save');
+const customDir = getNamedArg('--dir', null);
 
 // Extract positional prompt text excluding flags
 const textArgs = args.slice(1).filter((a, i, arr) => {
@@ -271,8 +273,8 @@ async function sendPrompt(promptText) {
   }
 }
 
-// 2. Wait for Argon Generation
-async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
+// 2. Wait for Argon Generation (In-Memory Streaming)
+async function waitForResponse(timeoutSeconds = 240) {
   const client = await getClient();
   try {
     console.log("[Bridge] Waiting for Argon to respond...");
@@ -289,7 +291,6 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
           const stopBtn = document.querySelector('button[aria-label*="Stop"], button[aria-label*="stop"]');
           const isGenerating = !!stopBtn;
           
-          // Query markdown content elements directly
           const markdownEls = document.querySelectorAll('.markdown, .md-content, [inline-copy-host], .response-content');
           const latestMd = markdownEls.length > 0 ? markdownEls[markdownEls.length - 1] : null;
 
@@ -333,15 +334,29 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
           stableCount++;
           if (stableCount >= 2) {
             console.log("\n[Bridge] Argon generation completed!");
-            
-            const outputPath = path.join(outDir, 'gemini_latest.md');
-            fs.writeFileSync(outputPath, state.text, 'utf-8');
-            
-            const jsonPath = path.join(outDir, 'gemini_output.json');
-            fs.writeFileSync(jsonPath, JSON.stringify(state, null, 2), 'utf-8');
+            console.log(`[Bridge] Found ${state.codeBlocks.length} code block(s).\n`);
 
-            console.log(`[Bridge] Saved Argon response to: ${outputPath}`);
-            console.log(`[Bridge] Found ${state.codeBlocks.length} code block(s).`);
+            // Output clean content directly to stdout in-memory
+            console.log("=== ARGON_RESPONSE_START ===");
+            console.log(state.text);
+            console.log("=== ARGON_RESPONSE_END ===");
+
+            if (state.codeBlocks.length > 0) {
+              console.log("\n=== ARGON_CODE_BLOCKS ===");
+              console.log(JSON.stringify(state.codeBlocks, null, 2));
+              console.log("=== ARGON_CODE_BLOCKS_END ===");
+            }
+
+            // Only write files if explicitly requested via --save or --dir
+            if (saveFlag || customDir) {
+              const outDir = customDir ? path.resolve(customDir) : process.cwd();
+              const outputPath = path.join(outDir, 'gemini_latest.md');
+              fs.writeFileSync(outputPath, state.text, 'utf-8');
+              const jsonPath = path.join(outDir, 'gemini_output.json');
+              fs.writeFileSync(jsonPath, JSON.stringify(state, null, 2), 'utf-8');
+              console.log(`[Bridge] Saved files to: ${outDir}`);
+            }
+
             return state;
           }
         } else {
@@ -359,7 +374,7 @@ async function waitForResponse(outDir = process.cwd(), timeoutSeconds = 240) {
   }
 }
 
-// 3. Read Current State Without Sending
+// 3. Read Current State Without Sending (In-Memory)
 async function readCurrent() {
   const client = await getClient();
   try {
@@ -401,7 +416,7 @@ async function readCurrent() {
       }
       await sendPrompt(textArgs);
     } else if (command === 'wait') {
-      await waitForResponse(targetDir);
+      await waitForResponse();
     } else if (command === 'read') {
       await readCurrent();
     } else if (command === 'send-and-wait') {
@@ -410,7 +425,7 @@ async function readCurrent() {
         process.exit(1);
       }
       await sendPrompt(textArgs);
-      await waitForResponse(targetDir);
+      await waitForResponse();
     } else {
       console.log(`
 Gemini Browser Bridge - Strict Argon Edition
@@ -418,12 +433,13 @@ Gemini Browser Bridge - Strict Argon Edition
 Usage:
   node gemini_bridge.js read                      Check if Argon is active (blocks Flash-Lite)
   node gemini_bridge.js send "<prompt>"           Send prompt to Argon only
-  node gemini_bridge.js wait [--dir <path>]       Wait for Argon response & extract code
+  node gemini_bridge.js wait [--save]             Wait for Argon response (streamed in-memory)
   node gemini_bridge.js send-and-wait "<prompt>"  Send and wait strictly for Argon
 
 Options:
   --port <number>   Chrome DevTools remote debugging port (default: 9222)
-  --dir <path>      Output directory for gemini_latest.md and gemini_output.json
+  --save            Save output to gemini_latest.md and gemini_output.json in workspace
+  --dir <path>      Custom directory if saving files
       `);
     }
   } catch (err) {

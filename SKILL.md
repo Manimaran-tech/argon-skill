@@ -21,6 +21,7 @@ This skill connects Antigravity directly to your Gemini session running the **Ar
 
 * **Argon (in Chrome):** The High-Reasoning Architect (thinks, reasons, generates code).
 * **Antigravity (Local Agent):** The Local Executor (reads files, pipes them to Argon, runs builds, executes tests, feeds logs back).
+* **Zero Temp Files:** All responses and code blocks stream directly through standard output in-memory—no temporary `.md` or `.json` files are dumped into your project folder.
 
 ---
 
@@ -37,7 +38,7 @@ Argon inside Chrome is completely sandboxed by the browser and cannot access you
   ┌────────────────────────────────────────────────────────┐
   │ 2. Argon analyzes code & reasons about changes         │
   └──────────────────────────┬─────────────────────────────┘
-                             │ (CDP bridge extracts code blocks)
+                             │ (CDP bridge extracts code blocks in-memory)
                              ▼
   ┌────────────────────────────────────────────────────────┐
   │ 3. Antigravity writes files to disk & runs tests       │
@@ -97,16 +98,14 @@ node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" sen
 ```
 *(If Argon is at limit, this command will immediately exit with code 2. Do not proceed to generate code yourself).*
 
-### Step 4: Wait for Argon & Extract Code
+### Step 4: Wait for Argon & Stream Response In-Memory
 ```powershell
-node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" wait --dir "<current-working-directory>"
+node "$env:USERPROFILE\.gemini\config\skills\argon\scripts\gemini_bridge.js" wait
 ```
-This saves:
-- Full response text to `<workspace>/gemini_latest.md`
-- Structured code blocks to `<workspace>/gemini_output.json`
+This streams the response directly to stdout between `=== ARGON_RESPONSE_START ===` and `=== ARGON_RESPONSE_END ===`, with parsed code blocks in `=== ARGON_CODE_BLOCKS ===`. No temporary files are created on disk.
 
 ### Step 5: Apply Code & Report Feedback
-1. Read `gemini_output.json` and write each code block to its respective file in the workspace.
+1. Parse the code blocks from the command output and write them directly to their target files.
 2. Run any build, compile, or test commands requested.
 3. Pipe the terminal output back to Argon if follow-up is needed:
    ```powershell
