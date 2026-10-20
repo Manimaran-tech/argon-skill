@@ -194,4 +194,3 @@ Copyright 2026 Manimaran-tech and Argon Skill Contributors
 ```
 
 Developed by **Manimaran K** ([@Manimaran-tech](https://github.com/Manimaran-tech)).
-Inspired by the architecture and open-science engineering principles of [QuantumShield](https://github.com/Manimaran-tech).
