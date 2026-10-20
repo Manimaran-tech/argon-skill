@@ -79,18 +79,20 @@ sequenceDiagram
 
 ---
 
-## Strict Argon Mode: Flash-Lite Safeguard
+## Strict Argon Mode: Flash-Lite Safeguard & Zero Fallback
 
 On consumer Google accounts, reaching the quota limit for reasoning models typically triggers an automatic fallback to **Flash-Lite**.
 
 When engineering complex codebases, responses from a non-thinking lightweight model can introduce regressions or low-fidelity code. **ARGON Skill enforces strict model guardrails:**
 
 1. **Pre-Flight Verification:** Prior to sending any prompt, the bridge checks the active mode picker. If the model has switched to Flash-Lite, the request is immediately aborted with exit code `2`.
-2. **Quota Banner Extraction:** If a quota exhaustion banner is detected, the bridge parses the exact reset timestamp and reports:
+2. **Zero Internal Fallback:** The skill definition strictly forbids the Antigravity agent from answering the coding task on its own using internal models (like Gemini Flash). If Argon is rate-limited or offline, the agent halts and informs the user rather than secretly substituting a weaker model.
+3. **Quota Banner Extraction:** If a quota exhaustion banner is detected, the bridge parses the exact reset timestamp and reports:
    ```text
    [BLOCKED] Argon limit reached (resets on 20 Oct at 2:52 pm). Flash-Lite is completely blocked.
    ```
-3. **Mid-Stream Watchdog:** If an active session is demoted mid-generation, all pending Flash-Lite text is discarded to preserve code integrity.
+4. **Mid-Stream Watchdog:** If an active session is demoted mid-generation, all pending Flash-Lite text is discarded to preserve code integrity.
+5. **Self-Healing Auto-Launch:** If Chrome was closed or your machine was restarted, the bridge automatically launches Chrome with `--remote-debugging-port=9222`, opens the Gemini web app, and re-establishes the connection without requiring manual terminal commands.
 
 ---
 
